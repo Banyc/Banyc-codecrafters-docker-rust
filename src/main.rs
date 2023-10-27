@@ -34,6 +34,10 @@ fn main() -> Result<()> {
     std::os::unix::fs::chroot(root).unwrap();
     std::env::set_current_dir("/").unwrap();
 
+    // The calling process is not moved into the new namespace.
+    // The first child created by the calling process will have the process ID 1 and will assume the role of init(1) in the new namespace.
+    unsafe { libc::unshare(libc::CLONE_NEWPID) };
+
     // Execute the command
     let output = std::process::Command::new(command)
         .args(command_args)
