@@ -36,7 +36,10 @@ fn main() -> Result<()> {
 
     // The calling process is not moved into the new namespace.
     // The first child created by the calling process will have the process ID 1 and will assume the role of init(1) in the new namespace.
-    unsafe { libc::unshare(libc::CLONE_NEWPID) };
+    let res = unsafe { libc::unshare(libc::CLONE_NEWPID) };
+    if res != 0 {
+        std::process::exit(res);
+    }
 
     // Execute the command
     let output = std::process::Command::new(command)
