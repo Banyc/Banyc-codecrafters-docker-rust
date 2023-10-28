@@ -59,11 +59,8 @@ fn parser() -> impl Parser<Token, WwwAuthenticate, Error = Simple<Token>> {
         .then(pair.separated_by(just(Token::Comma)))
         .then_ignore(just(Token::End))
         .map(|(scheme, pairs)| {
-            let mut map = HashMap::new();
-            pairs.into_iter().for_each(|(key, value)| {
-                map.insert(key, value);
-            });
-            WwwAuthenticate { scheme, pairs: map }
+            let pairs = pairs.into_iter().collect();
+            WwwAuthenticate { scheme, pairs }
         })
 }
 
