@@ -33,7 +33,7 @@ fn parser() -> impl Parser<Token, WwwAuthenticate, Error = Simple<Token>> {
         if let Token::Key(key) = token {
             return key;
         }
-        panic!()
+        unreachable!()
     });
 
     // pair <- key eq value
@@ -42,18 +42,17 @@ fn parser() -> impl Parser<Token, WwwAuthenticate, Error = Simple<Token>> {
             if let Token::Key(key) = token {
                 return key;
             }
-            panic!()
+            unreachable!()
         })
-        .then(just(Token::Eq).ignored())
+        .then_ignore(just(Token::Eq))
         .then(
             filter(|token| matches!(token, Token::Value(_))).map(|token| {
                 if let Token::Value(value) = token {
                     return value;
                 }
-                panic!()
+                unreachable!()
             }),
-        )
-        .map(|((key, _), value)| (key, value));
+        );
 
     // s <- scheme ( pair )comma* $
     scheme
