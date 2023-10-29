@@ -46,7 +46,7 @@ impl RunArgs {
         #[cfg(target_os = "linux")]
         {
             let proc_dir = root.join("proc");
-            nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE).unwrap();
+            let _ = nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE);
         }
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();

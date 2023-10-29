@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_compression::tokio::bufread::GzipDecoder;
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
@@ -12,8 +14,12 @@ const LAYER_DIR: &str = "/tmp/mydocker/layers";
 
 pub async fn pull(image: &str, root: impl AsRef<std::path::Path>) {
     let (image_name, image_version) = image.split_once(':').unwrap();
+    let image_name: Cow<'_, str> = match image_name.contains('/') {
+        true => image_name.into(),
+        false => format!("library/{}", image_name).into(),
+    };
     // https://distribution.github.io/distribution/spec/api/#pulling-an-image-manifest
-    let url_manifests = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
+    let url_manifests = format!("{REGISTRY_BASE}/{image_name}/manifests/{image_version}");
 
     // // https://distribution.github.io/distribution/spec/manifest-v2-2/#manifest-list
     let resp = pass_token_auth(|client| {
@@ -36,10 +42,10 @@ pub async fn pull(image: &str, root: impl AsRef<std::path::Path>) {
     match media_type.as_str() {
         MEDIA_TYPE_DISTRIBUTION => {
             // https://distribution.github.io/distribution/spec/manifest-v2-2/#image-manifest
-            handle_manifest(image_name, digest, MEDIA_TYPE_DISTRIBUTION, root).await
+            handle_manifest(&image_name, digest, MEDIA_TYPE_DISTRIBUTION, root).await
         }
         // https://github.com/opencontainers/image-spec/blob/main/manifest.md
-        MEDIA_TYPE_OCI => handle_manifest(image_name, digest, MEDIA_TYPE_OCI, root).await,
+        MEDIA_TYPE_OCI => handle_manifest(&image_name, digest, MEDIA_TYPE_OCI, root).await,
         _ => panic!("{media_type}"),
     }
 }
@@ -50,7 +56,7 @@ async fn handle_manifest(
     accept: &str,
     root: impl AsRef<std::path::Path>,
 ) {
-    let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{digest}");
+    let url_manifest = format!("{REGISTRY_BASE}/{image_name}/manifests/{digest}");
     // let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
     let resp = pass_token_auth(|client| client.get(&url_manifest).header("Accept", accept)).await;
     // dbg!(&resp);
@@ -78,13 +84,14 @@ async fn handle_manifest(
 async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::path::PathBuf {
     let layer_dir = std::path::Path::new(LAYER_DIR);
     tokio::fs::create_dir_all(layer_dir).await.unwrap();
+    let image_name = image_name.replace('/', "_");
     let file_path = layer_dir.join(format!("{image_name}.{layer_index}.{digest}.tar.gz"));
     if file_path.exists() {
         // Use cached layer
         return file_path;
     }
 
-    let url_blob = format!("{REGISTRY_BASE}/library/{image_name}/blobs/{digest}");
+    let url_blob = format!("{REGISTRY_BASE}/{image_name}/blobs/{digest}");
     // dbg!(&url_blob);
     let resp = pass_token_auth(|client| client.get(&url_blob)).await;
     // dbg!(&resp);
