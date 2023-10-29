@@ -5,11 +5,14 @@ use serde::Deserialize;
 
 use crate::www_authenticate::WwwAuthenticate;
 
-pub async fn pass_token_auth(url: &str) -> reqwest::Response {
+pub async fn pass_token_auth<F>(f: F) -> reqwest::Response
+where
+    F: Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+{
     let client = reqwest::Client::new();
 
     // Attempt to begin a push/pull operation with the registry.
-    let resp = client.get(url).send().await.unwrap();
+    let resp = f(&client).send().await.unwrap();
     if resp.status().as_u16() != 401 {
         return resp;
     }
@@ -47,8 +50,7 @@ pub async fn pass_token_auth(url: &str) -> reqwest::Response {
     let authorization = format!("Bearer {}", resp.token());
 
     // The Registry authorizes the client by validating the Bearer token and the claim set embedded within it and begins the push/pull session as usual.
-    client
-        .get(url)
+    f(&client)
         .header("Authorization", authorization)
         .send()
         .await
@@ -71,7 +73,9 @@ mod tests {
     #[tokio::test]
     async fn test_pass_token_auth() {
         let url = "https://registry.hub.docker.com/v2/";
-        let resp = pass_token_auth(url).await;
+        let resp = pass_token_auth(move |client| client.get(url)).await;
+        dbg!(&resp);
         assert!(resp.status().is_success());
+        dbg!(&resp.text().await.unwrap());
     }
 }

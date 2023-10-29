@@ -1,4 +1,4 @@
-FROM rust:1.62-buster
+FROM rust:1.73-buster
 
 # Download docker-explorer
 ARG docker_explorer_version=v18
