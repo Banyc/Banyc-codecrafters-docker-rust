@@ -5,7 +5,6 @@ use tokio::io::AsyncWriteExt;
 use crate::token_auth::pass_token_auth;
 
 const REGISTRY_BASE: &str = "https://registry.hub.docker.com/v2";
-const ARCHITECTURE: &str = "amd64";
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const MEDIA_TYPE_OCI: &str = "application/vnd.oci.image.manifest.v1+json";
@@ -30,7 +29,7 @@ pub async fn pull(image: &str, root: impl AsRef<std::path::Path>) {
     let manifest = &manifest_list
         .manifests
         .iter()
-        .find(|manifest| manifest.platform.architecture == ARCHITECTURE)
+        .find(|manifest| manifest.platform.architecture == std::env::consts::ARCH)
         .unwrap();
     let (media_type, digest) = (&manifest.media_type, &manifest.digest);
 
