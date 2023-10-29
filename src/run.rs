@@ -41,8 +41,18 @@ impl RunArgs {
             let pid: usize = pid.parse().unwrap();
             panic!("Process `{pid}` may still be running. Use `run --force`.");
         }
+        let root = container.join("rootfs");
+        // Unmount `/proc` in `root`
+        #[cfg(target_os = "linux")]
+        {
+            let proc_dir = root.join("proc");
+            nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE).unwrap();
+        }
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();
+
+        // Set up root directory
+        std::fs::create_dir_all(&root).unwrap();
 
         // Lock this container
         {
@@ -54,10 +64,6 @@ impl RunArgs {
                 .unwrap();
             file.write_all(format!("{pid}").as_bytes()).unwrap();
         }
-
-        // Set up root directory
-        let root = container.join("rootfs");
-        std::fs::create_dir_all(&root).unwrap();
 
         // Pull image
         let root_clone = root.clone();
