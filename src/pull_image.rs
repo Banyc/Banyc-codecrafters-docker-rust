@@ -29,7 +29,7 @@ pub async fn pull(image: &str, root: impl AsRef<std::path::Path>) {
     let manifest = &manifest_list
         .manifests
         .iter()
-        .find(|manifest| manifest.platform.architecture == std::env::consts::ARCH)
+        .find(|manifest| manifest.platform.architecture == docker_arch())
         .unwrap();
     let (media_type, digest) = (&manifest.media_type, &manifest.digest);
 
@@ -159,6 +159,16 @@ struct ImageLayer {
     // size: usize,
     digest: String,
     // urls: Option<Vec<String>>,
+}
+
+fn docker_arch() -> &'static str {
+    let arch = std::env::consts::ARCH;
+    match arch {
+        "x86" => "i386",
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        _ => arch,
+    }
 }
 
 #[cfg(test)]
