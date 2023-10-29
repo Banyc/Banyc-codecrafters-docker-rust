@@ -77,24 +77,26 @@ async fn handle_manifest(
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
 async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::path::PathBuf {
+    let layer_dir = std::path::Path::new(LAYER_DIR);
+    tokio::fs::create_dir_all(layer_dir).await.unwrap();
+    let file_path = layer_dir.join(format!("{image_name}.{layer_index}.{digest}"));
+    if file_path.exists() {
+        // Use cached layer
+        return file_path;
+    }
+
     let url_blob = format!("{REGISTRY_BASE}/library/{image_name}/blobs/{digest}");
     // dbg!(&url_blob);
     let resp = pass_token_auth(|client| client.get(&url_blob)).await;
     // dbg!(&resp);
 
-    download(resp, image_name, layer_index, digest).await
+    download(resp, &file_path).await;
+    file_path
 }
 
-async fn download(
-    resp: reqwest::Response,
-    image_name: &str,
-    layer_index: usize,
-    digest: &str,
-) -> std::path::PathBuf {
+async fn download(resp: reqwest::Response, file_path: impl AsRef<std::path::Path>) {
     let bytes = resp.bytes().await.unwrap();
-    let layer_dir = std::path::Path::new(LAYER_DIR);
-    tokio::fs::create_dir_all(layer_dir).await.unwrap();
-    let file_path = layer_dir.join(format!("{image_name}.{layer_index}.{digest}"));
+
     let mut file = tokio::fs::File::options()
         .create(true)
         .write(true)
@@ -102,7 +104,6 @@ async fn download(
         .await
         .unwrap();
     file.write_all(&bytes).await.unwrap();
-    file_path
 }
 
 #[derive(Debug, Clone, Deserialize)]
