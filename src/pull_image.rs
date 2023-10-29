@@ -170,12 +170,14 @@ mod tests {
     #[tokio::test]
     async fn test_pull_distribution() {
         let image = "busybox:latest";
+        let _ = tokio::fs::remove_dir_all(ROOT).await;
         pull(image, ROOT).await;
     }
 
     #[tokio::test]
     async fn test_pull_oci() {
         let image = "ubuntu:latest";
+        let _ = tokio::fs::remove_dir_all(ROOT).await;
         pull(image, ROOT).await;
     }
 }
