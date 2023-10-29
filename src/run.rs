@@ -92,6 +92,22 @@ impl RunArgs {
         let null = dev.join("null");
         std::fs::File::create(null).unwrap();
 
+        // Mount `/proc`
+        #[cfg(target_os = "linux")]
+        {
+            let proc_dir = root.join("proc");
+            std::fs::create_dir_all(&proc_dir).unwrap();
+
+            nix::mount::mount(
+                Some("/proc"),
+                &proc_dir,
+                Some("proc"),
+                nix::mount::MsFlags::empty(),
+                None::<&str>,
+            )
+            .unwrap();
+        }
+
         // Chroot the root directory
         std::os::unix::fs::chroot(root).unwrap();
         std::env::set_current_dir("/").unwrap();
