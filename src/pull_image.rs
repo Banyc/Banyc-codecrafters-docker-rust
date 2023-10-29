@@ -78,7 +78,7 @@ async fn handle_manifest(
 async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::path::PathBuf {
     let layer_dir = std::path::Path::new(LAYER_DIR);
     tokio::fs::create_dir_all(layer_dir).await.unwrap();
-    let file_path = layer_dir.join(format!("{image_name}.{layer_index}.{digest}"));
+    let file_path = layer_dir.join(format!("{image_name}.{layer_index}.{digest}.tar.gz"));
     if file_path.exists() {
         // Use cached layer
         return file_path;
