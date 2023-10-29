@@ -26,18 +26,21 @@ fn main() -> Result<()> {
         });
 
     // Copy command file `docker-explorer` to the root directory
-    let command_file = std::path::Path::new(DOCKER_EXPLORER)
-        .strip_prefix("/")
-        .with_context(|| format!("command '{}' is not an absolute path", command.display()))?;
-    let command_file = root.join(command_file);
-    std::fs::create_dir_all(command_file.parent().unwrap()).unwrap();
-    std::fs::copy(command, &command_file).with_context(|| {
-        format!(
-            "failed to copy '{}' to '{}'",
-            command.display(),
-            command_file.display()
-        )
-    })?;
+    let docker_explorer = std::path::Path::new(DOCKER_EXPLORER);
+    if docker_explorer.exists() {
+        let command_file = docker_explorer
+            .strip_prefix("/")
+            .with_context(|| format!("command '{}' is not an absolute path", command.display()))?;
+        let command_file = root.join(command_file);
+        std::fs::create_dir_all(command_file.parent().unwrap()).unwrap();
+        std::fs::copy(command, &command_file).with_context(|| {
+            format!(
+                "failed to copy '{}' to '{}'",
+                command.display(),
+                command_file.display()
+            )
+        })?;
+    }
 
     // Create `dev/null` in `root`
     let dev = root.join("dev");
