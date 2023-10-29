@@ -163,11 +163,14 @@ struct ImageLayer {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
 
     const ROOT: &str = "/tmp/mydocker/root";
 
     #[tokio::test]
+    #[serial]
     async fn test_pull_distribution() {
         let image = "busybox:latest";
         let _ = tokio::fs::remove_dir_all(ROOT).await;
@@ -175,6 +178,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_pull_oci() {
         let image = "ubuntu:latest";
         let _ = tokio::fs::remove_dir_all(ROOT).await;
