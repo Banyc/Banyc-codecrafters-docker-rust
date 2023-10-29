@@ -1,3 +1,4 @@
+use async_compression::tokio::bufread::GzipDecoder;
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
@@ -8,8 +9,9 @@ const ARCHITECTURE: &str = "amd64";
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const MEDIA_TYPE_OCI: &str = "application/vnd.oci.image.manifest.v1+json";
+const LAYER_DIR: &str = "/tmp/mydocker/layers";
 
-pub async fn pull(image: &str) {
+pub async fn pull(image: &str, root: impl AsRef<std::path::Path>) {
     let (image_name, image_version) = image.split_once(':').unwrap();
     // https://distribution.github.io/distribution/spec/api/#pulling-an-image-manifest
     let url_manifests = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
@@ -21,10 +23,10 @@ pub async fn pull(image: &str) {
             .header("Accept", MEDIA_TYPE_MANIFEST_LIST)
     })
     .await;
-    dbg!(&resp);
+    // dbg!(&resp);
     // dbg!(&resp.text().await.unwrap());
     let manifest_list: ImageManifestList = resp.json().await.unwrap();
-    dbg!(&manifest_list);
+    // dbg!(&manifest_list);
     let manifest = &manifest_list
         .manifests
         .iter()
@@ -35,53 +37,72 @@ pub async fn pull(image: &str) {
     match media_type.as_str() {
         MEDIA_TYPE_DISTRIBUTION => {
             // https://distribution.github.io/distribution/spec/manifest-v2-2/#image-manifest
-            handle_distribution(image_name, digest, MEDIA_TYPE_DISTRIBUTION).await
+            handle_manifest(image_name, digest, MEDIA_TYPE_DISTRIBUTION, root).await
         }
         // https://github.com/opencontainers/image-spec/blob/main/manifest.md
-        MEDIA_TYPE_OCI => handle_distribution(image_name, digest, MEDIA_TYPE_OCI).await,
-        _ => panic!(),
+        MEDIA_TYPE_OCI => handle_manifest(image_name, digest, MEDIA_TYPE_OCI, root).await,
+        _ => panic!("{media_type}"),
     }
 }
 
-async fn handle_distribution(image_name: &str, digest: &str, accept: &str) {
+async fn handle_manifest(
+    image_name: &str,
+    digest: &str,
+    accept: &str,
+    root: impl AsRef<std::path::Path>,
+) {
     let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{digest}");
     // let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
     let resp = pass_token_auth(|client| client.get(&url_manifest).header("Accept", accept)).await;
-    dbg!(&resp);
+    // dbg!(&resp);
     let manifest: ImageManifest = resp.json().await.unwrap();
-    dbg!(&manifest);
+    // dbg!(&manifest);
     // dbg!(&resp.text().await.unwrap());
 
-    for layer in &manifest.layers {
+    for (i, layer) in manifest.layers.iter().enumerate() {
         let digest = &layer.digest;
 
-        pull_layer(image_name, digest).await;
+        let file_path = pull_layer(image_name, i, digest).await;
+        let tar_gz = tokio::fs::File::options()
+            .read(true)
+            .open(file_path)
+            .await
+            .unwrap();
+        let tar_gz = tokio::io::BufReader::new(tar_gz);
+        let tar = GzipDecoder::new(tar_gz);
+        let mut archive = tokio_tar::Archive::new(tar);
+        archive.unpack(&root).await.unwrap();
     }
 }
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
-async fn pull_layer(image_name: &str, digest: &str) {
+async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::path::PathBuf {
     let url_blob = format!("{REGISTRY_BASE}/library/{image_name}/blobs/{digest}");
-    dbg!(&url_blob);
+    // dbg!(&url_blob);
     let resp = pass_token_auth(|client| client.get(&url_blob)).await;
-    dbg!(&resp);
+    // dbg!(&resp);
 
-    download(resp, digest).await;
+    download(resp, image_name, layer_index, digest).await
 }
 
-async fn download(resp: reqwest::Response, digest: &str) {
+async fn download(
+    resp: reqwest::Response,
+    image_name: &str,
+    layer_index: usize,
+    digest: &str,
+) -> std::path::PathBuf {
     let bytes = resp.bytes().await.unwrap();
-    let file_name = digest.split_once(':').unwrap().1;
-    let tmp_dir = std::path::Path::new("/tmp/mydocker/layers");
-    tokio::fs::create_dir_all(tmp_dir).await.unwrap();
-    let file = tmp_dir.join(file_name);
+    let layer_dir = std::path::Path::new(LAYER_DIR);
+    tokio::fs::create_dir_all(layer_dir).await.unwrap();
+    let file_path = layer_dir.join(format!("{image_name}.{layer_index}.{digest}"));
     let mut file = tokio::fs::File::options()
         .create(true)
         .write(true)
-        .open(file)
+        .open(&file_path)
         .await
         .unwrap();
     file.write_all(&bytes).await.unwrap();
+    file_path
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -144,15 +165,17 @@ struct ImageLayer {
 mod tests {
     use super::*;
 
+    const ROOT: &str = "/tmp/mydocker/root";
+
     #[tokio::test]
     async fn test_pull_distribution() {
         let image = "busybox:latest";
-        pull(image).await;
+        pull(image, ROOT).await;
     }
 
     #[tokio::test]
     async fn test_pull_oci() {
         let image = "ubuntu:latest";
-        pull(image).await;
+        pull(image, ROOT).await;
     }
 }

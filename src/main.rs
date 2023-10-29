@@ -1,17 +1,32 @@
 use anyhow::{Context, Result};
+use docker_starter_rust::pull_image::pull;
+
+const DOCKER_EXPLORER: &str = "/usr/local/bin/docker-explorer";
 
 // Usage: your_docker.sh run <image> <command> <arg1> <arg2> ...
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
+    let image = &args[2];
     let command = &args[3];
     let command = std::path::Path::new(command);
     let command_args = &args[4..];
 
-    // Copy command file to a new directory
-    let root = std::path::Path::new("/tmp/mydocker");
+    // Set up root directory
+    let root = std::path::Path::new("/tmp/mydocker/container");
     let _ = std::fs::remove_dir_all(root);
     std::fs::create_dir_all(root).unwrap();
-    let command_file = command
+
+    // Pull image
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async move {
+            pull(image, &root).await;
+        });
+
+    // Copy command file `docker-explorer` to the root directory
+    let command_file = std::path::Path::new(DOCKER_EXPLORER)
         .strip_prefix("/")
         .with_context(|| format!("command '{}' is not an absolute path", command.display()))?;
     let command_file = root.join(command_file);
@@ -30,7 +45,7 @@ fn main() -> Result<()> {
     let null = dev.join("null");
     std::fs::File::create(null).unwrap();
 
-    // Chroot the new directory
+    // Chroot the root directory
     std::os::unix::fs::chroot(root).unwrap();
     std::env::set_current_dir("/").unwrap();
 
