@@ -46,7 +46,11 @@ impl RunArgs {
         #[cfg(target_os = "linux")]
         {
             let proc_dir = root.join("proc");
-            let _ = nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE);
+            if let Err(e) = nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE) {
+                if e != nix::errno::Errno::ENOENT {
+                    panic!("{e}");
+                }
+            }
         }
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();
