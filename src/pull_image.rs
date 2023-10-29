@@ -168,7 +168,7 @@ mod tests {
 
     use super::*;
 
-    const ROOT: &str = "/tmp/mydocker/root";
+    const ROOT: &str = "/tmp/mydocker/test/rootfs";
 
     #[tokio::test]
     #[serial]
