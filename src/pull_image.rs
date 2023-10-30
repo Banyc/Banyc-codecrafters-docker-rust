@@ -5,19 +5,24 @@ use tokio::{fs::create_dir_all, io::AsyncWriteExt};
 
 use crate::{token_auth::pass_token_auth, PACKED_LAYER_DIR};
 
-const REGISTRY_BASE: &str = "https://registry.hub.docker.com/v2";
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const MEDIA_TYPE_OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 
-pub async fn pull(image: &str, root_fs: std::path::PathBuf, unpack_layer_dir: std::path::PathBuf) {
+pub async fn pull(
+    registry: &str,
+    image: &str,
+    root_fs: std::path::PathBuf,
+    unpack_layer_dir: std::path::PathBuf,
+) {
+    let registry_base = format!("{registry}/v2");
     let (image_name, image_version) = image.split_once(':').unwrap();
     let image_name: Cow<'_, str> = match image_name.contains('/') {
         true => image_name.into(),
         false => format!("library/{}", image_name).into(),
     };
     // https://distribution.github.io/distribution/spec/api/#pulling-an-image-manifest
-    let url_manifests = format!("{REGISTRY_BASE}/{image_name}/manifests/{image_version}");
+    let url_manifests = format!("{registry_base}/{image_name}/manifests/{image_version}");
 
     // // https://distribution.github.io/distribution/spec/manifest-v2-2/#manifest-list
     let resp = pass_token_auth(|client| {
@@ -41,6 +46,7 @@ pub async fn pull(image: &str, root_fs: std::path::PathBuf, unpack_layer_dir: st
         MEDIA_TYPE_DISTRIBUTION => {
             // https://distribution.github.io/distribution/spec/manifest-v2-2/#image-manifest
             handle_manifest(
+                &registry_base,
                 &image_name,
                 digest,
                 MEDIA_TYPE_DISTRIBUTION,
@@ -52,6 +58,7 @@ pub async fn pull(image: &str, root_fs: std::path::PathBuf, unpack_layer_dir: st
         // https://github.com/opencontainers/image-spec/blob/main/manifest.md
         MEDIA_TYPE_OCI => {
             handle_manifest(
+                &registry_base,
                 &image_name,
                 digest,
                 MEDIA_TYPE_OCI,
@@ -65,14 +72,15 @@ pub async fn pull(image: &str, root_fs: std::path::PathBuf, unpack_layer_dir: st
 }
 
 async fn handle_manifest(
+    registry_base: &str,
     image_name: &str,
     digest: &str,
     accept: &str,
     root_fs: std::path::PathBuf,
     unpack_layer_dir: std::path::PathBuf,
 ) {
-    let url_manifest = format!("{REGISTRY_BASE}/{image_name}/manifests/{digest}");
-    // let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
+    let url_manifest = format!("{registry_base}/{image_name}/manifests/{digest}");
+    // let url_manifest = format!("{registry_base}/library/{image_name}/manifests/{image_version}");
     let resp = pass_token_auth(|client| client.get(&url_manifest).header("Accept", accept)).await;
     // dbg!(&resp);
     let manifest: models::ImageManifest = resp.json().await.unwrap();
@@ -88,7 +96,7 @@ async fn handle_manifest(
         let _ = tokio::fs::remove_dir_all(&unpack_dir).await;
         tokio::fs::create_dir_all(&unpack_dir).await.unwrap();
 
-        let file_path = pull_layer(image_name, i, digest).await;
+        let file_path = pull_layer(registry_base, image_name, i, digest).await;
         let tar_gz = tokio::fs::File::options()
             .read(true)
             .open(file_path)
@@ -134,7 +142,12 @@ async fn handle_manifest(
 }
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
-async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::path::PathBuf {
+async fn pull_layer(
+    registry_base: &str,
+    image_name: &str,
+    layer_index: usize,
+    digest: &str,
+) -> std::path::PathBuf {
     tokio::fs::create_dir_all(PACKED_LAYER_DIR.as_path())
         .await
         .unwrap();
@@ -147,7 +160,7 @@ async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::
         return file_path;
     }
 
-    let url_blob = format!("{REGISTRY_BASE}/{image_name}/blobs/{digest}");
+    let url_blob = format!("{registry_base}/{image_name}/blobs/{digest}");
     // dbg!(&url_blob);
     let resp = pass_token_auth(|client| client.get(&url_blob)).await;
     // dbg!(&resp);
@@ -272,13 +285,14 @@ mod tests {
 
     const ROOT: &str = "/tmp/mydocker/test/rootfs";
     const UNPACK: &str = "/tmp/mydocker/test/layers";
+    const DEFAULT_REGISTRY: &str = "https://registry.hub.docker.com";
 
     #[tokio::test]
     #[serial]
     async fn test_pull_distribution() {
         let image = "busybox:latest";
         let _ = tokio::fs::remove_dir_all(ROOT).await;
-        pull(image, ROOT.into(), UNPACK.into()).await;
+        pull(DEFAULT_REGISTRY, image, ROOT.into(), UNPACK.into()).await;
     }
 
     #[tokio::test]
@@ -286,6 +300,6 @@ mod tests {
     async fn test_pull_oci() {
         let image = "ubuntu:latest";
         let _ = tokio::fs::remove_dir_all(ROOT).await;
-        pull(image, ROOT.into(), UNPACK.into()).await;
+        pull(DEFAULT_REGISTRY, image, ROOT.into(), UNPACK.into()).await;
     }
 }

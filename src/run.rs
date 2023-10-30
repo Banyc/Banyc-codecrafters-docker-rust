@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 const DOCKER_EXPLORER: &str = "/usr/local/bin/docker-explorer";
+const DEFAULT_REGISTRY: &str = "https://registry.hub.docker.com";
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
@@ -19,6 +20,8 @@ pub struct RunArgs {
     pub name: String,
     #[clap(short, long, default_value_t = false)]
     pub force: bool,
+    #[clap(short, long, default_value_t = String::from(DEFAULT_REGISTRY))]
+    pub registry: String,
 }
 
 impl RunArgs {
@@ -56,7 +59,7 @@ impl RunArgs {
             .build()
             .unwrap()
             .block_on(async move {
-                pull(image, root_clone, unpack_layer_dir).await;
+                pull(&self.registry, image, root_clone, unpack_layer_dir).await;
             });
 
         // Copy command file `docker-explorer` to the root directory
