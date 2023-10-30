@@ -1,4 +1,5 @@
 pub mod exec;
+pub mod ls;
 pub mod mounting;
 pub mod pull_image;
 pub mod rm;
