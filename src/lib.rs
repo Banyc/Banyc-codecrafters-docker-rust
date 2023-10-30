@@ -6,22 +6,27 @@ pub mod run;
 pub mod token_auth;
 pub mod www_authenticate;
 
-const CONTAINERS: &str = "/tmp/mydocker/containers";
+static BASE_DIR: once_cell::sync::Lazy<std::path::PathBuf> =
+    once_cell::sync::Lazy::new(|| std::path::PathBuf::from("/tmp/mydocker"));
+static CONTAINERS: once_cell::sync::Lazy<std::path::PathBuf> =
+    once_cell::sync::Lazy::new(|| BASE_DIR.join("containers"));
+static PACKED_LAYER_DIR: once_cell::sync::Lazy<std::path::PathBuf> =
+    once_cell::sync::Lazy::new(|| BASE_DIR.join("layers"));
 
 fn container_dir(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(CONTAINERS).join(name)
+    CONTAINERS.join(name)
 }
 
 fn pid_file_path(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(CONTAINERS).join(name).join("pid")
+    CONTAINERS.join(name).join("pid")
 }
 
 fn root_fs_path(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(CONTAINERS).join(name).join("rootfs")
+    CONTAINERS.join(name).join("rootfs")
 }
 
 fn unpack_layer_dir(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(CONTAINERS).join(name).join("layers")
+    CONTAINERS.join(name).join("layers")
 }
 
 fn read_pid(pid_file_path: impl AsRef<std::path::Path>) -> Option<usize> {

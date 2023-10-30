@@ -3,15 +3,14 @@ use std::borrow::Cow;
 use async_compression::tokio::bufread::GzipDecoder;
 use tokio::{fs::create_dir_all, io::AsyncWriteExt};
 
-use crate::token_auth::pass_token_auth;
+use crate::{token_auth::pass_token_auth, PACKED_LAYER_DIR};
 
 const REGISTRY_BASE: &str = "https://registry.hub.docker.com/v2";
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const MEDIA_TYPE_OCI: &str = "application/vnd.oci.image.manifest.v1+json";
-const LAYER_DIR: &str = "/tmp/mydocker/layers";
 
-pub async fn pull(image: &str, root: std::path::PathBuf, unpack_layer_dir: std::path::PathBuf) {
+pub async fn pull(image: &str, root_fs: std::path::PathBuf, unpack_layer_dir: std::path::PathBuf) {
     let (image_name, image_version) = image.split_once(':').unwrap();
     let image_name: Cow<'_, str> = match image_name.contains('/') {
         true => image_name.into(),
@@ -45,14 +44,21 @@ pub async fn pull(image: &str, root: std::path::PathBuf, unpack_layer_dir: std::
                 &image_name,
                 digest,
                 MEDIA_TYPE_DISTRIBUTION,
-                root,
+                root_fs,
                 unpack_layer_dir,
             )
             .await
         }
         // https://github.com/opencontainers/image-spec/blob/main/manifest.md
         MEDIA_TYPE_OCI => {
-            handle_manifest(&image_name, digest, MEDIA_TYPE_OCI, root, unpack_layer_dir).await
+            handle_manifest(
+                &image_name,
+                digest,
+                MEDIA_TYPE_OCI,
+                root_fs,
+                unpack_layer_dir,
+            )
+            .await
         }
         _ => panic!("{media_type}"),
     }
@@ -128,10 +134,11 @@ async fn handle_manifest(
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
 async fn pull_layer(image_name: &str, layer_index: usize, digest: &str) -> std::path::PathBuf {
-    let layer_dir = std::path::Path::new(LAYER_DIR);
-    tokio::fs::create_dir_all(layer_dir).await.unwrap();
+    tokio::fs::create_dir_all(PACKED_LAYER_DIR.as_path())
+        .await
+        .unwrap();
     let (image_name_left, image_name_right) = image_name.split_once('/').unwrap();
-    let file_path = layer_dir.join(format!(
+    let file_path = PACKED_LAYER_DIR.join(format!(
         "{image_name_left}.{image_name_right}.{layer_index}.{digest}.tar.gz"
     ));
     if file_path.exists() {
