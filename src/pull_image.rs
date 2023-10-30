@@ -121,13 +121,14 @@ async fn handle_manifest(
         );
         // dbg!(&overlay_o);
         // dbg!(&root_fs);
-        let _ = nix::mount::mount(
+        nix::mount::mount(
             Some("overlay"),
             &root_fs,
             Some("overlay"),
             nix::mount::MsFlags::empty(),
             Some(overlay_o.as_str()),
-        );
+        )
+        .unwrap();
     }
     let _ = root_fs;
 }
