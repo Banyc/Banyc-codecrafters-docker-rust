@@ -3,7 +3,7 @@ use crate::{
     mounting::{mount, unmount},
     pid_file_path,
     pull_image::pull,
-    read_pid, unpack_layer_dir, write_pid,
+    read_pid, root_fs_path, unpack_layer_dir, write_pid,
 };
 use anyhow::{Context, Result};
 use clap::Args;
@@ -37,7 +37,7 @@ impl RunArgs {
             let pid = pid.unwrap();
             panic!("Process `{pid}` may still be running. Use `run --force`.");
         }
-        let root = container.join("rootfs");
+        let root = root_fs_path(&self.name);
         unmount(&root);
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();
