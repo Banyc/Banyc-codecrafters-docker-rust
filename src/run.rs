@@ -3,7 +3,7 @@ use crate::{
     mounting::{mount, unmount},
     pid_file_path,
     pull_image::pull,
-    read_pid, root_fs_path, unpack_layer_dir, write_pid,
+    read_pid, root_fs_path, write_pid,
 };
 use anyhow::{Context, Result};
 use clap::Args;
@@ -41,7 +41,7 @@ impl RunArgs {
             panic!("Process `{pid}` may still be running. Use `run --force`.");
         }
         let root = root_fs_path(&self.name);
-        unmount(&root);
+        unmount(&self.name);
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();
 
@@ -52,14 +52,13 @@ impl RunArgs {
         write_pid(&pid_file_path);
 
         // Pull image
-        let root_clone = root.clone();
-        let unpack_layer_dir = unpack_layer_dir(&self.name);
+        let name = self.name.clone();
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(async move {
-                pull(&self.registry, image, root_clone, unpack_layer_dir).await;
+                pull(&self.registry, image, &name).await;
             });
 
         // Copy command file `docker-explorer` to the root directory
@@ -85,7 +84,7 @@ impl RunArgs {
         let null = dev.join("null");
         std::fs::File::create(null).unwrap();
 
-        mount(&root);
+        mount(&self.name);
 
         // Execute the command
         execute_command(command, command_args, &root)

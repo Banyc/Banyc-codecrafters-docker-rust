@@ -1,20 +1,19 @@
 use std::borrow::Cow;
 
 use async_compression::tokio::bufread::GzipDecoder;
-use tokio::{fs::create_dir_all, io::AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
-use crate::{mounting::mount_layers, token_auth::pass_token_auth, PACKED_LAYER_DIR};
+use crate::{
+    mounting::{mount_layers, mount_writable_tmp_fs},
+    token_auth::pass_token_auth,
+    unpack_layer_dir, PACKED_LAYER_DIR,
+};
 
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const MEDIA_TYPE_OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 
-pub async fn pull(
-    registry: &str,
-    image: &str,
-    root_fs: std::path::PathBuf,
-    unpack_layer_dir: std::path::PathBuf,
-) {
+pub async fn pull(registry: &str, image: &str, container_name: &str) {
     let registry_base = format!("{registry}/v2");
     let (image_name, image_version) = image.split_once(':').unwrap();
     let image_name: Cow<'_, str> = match image_name.contains('/') {
@@ -58,8 +57,7 @@ pub async fn pull(
                 &image_name,
                 digest,
                 MEDIA_TYPE_DISTRIBUTION,
-                root_fs,
-                unpack_layer_dir,
+                container_name,
             )
             .await
         }
@@ -70,8 +68,7 @@ pub async fn pull(
                 &image_name,
                 digest,
                 MEDIA_TYPE_OCI,
-                root_fs,
-                unpack_layer_dir,
+                container_name,
             )
             .await
         }
@@ -84,8 +81,7 @@ async fn handle_manifest(
     image_name: &str,
     digest: &str,
     accept: &str,
-    root_fs: std::path::PathBuf,
-    unpack_layer_dir: std::path::PathBuf,
+    container_name: &str,
 ) {
     let url_manifest = format!("{registry_base}/{image_name}/manifests/{digest}");
     // let url_manifest = format!("{registry_base}/library/{image_name}/manifests/{image_version}");
@@ -95,6 +91,7 @@ async fn handle_manifest(
     // dbg!(&manifest);
     // dbg!(&resp.text().await.unwrap());
 
+    let unpack_layer_dir = unpack_layer_dir(container_name);
     let mut lower_dir_string = String::new();
     for (i, layer) in manifest.layers().iter().enumerate() {
         let unpack_dir = unpack_layer_dir.join(format!("layer.{i}"));
@@ -121,19 +118,8 @@ async fn handle_manifest(
         lower_dir_string.push_str(unpack_dir.to_str().unwrap());
     }
 
-    let upper_dir = unpack_layer_dir.join("upper");
-    // https://unix.stackexchange.com/a/330166
-    let work_dir = unpack_layer_dir.join("work");
-
-    let _ = create_dir_all(&upper_dir).await;
-    let _ = create_dir_all(&work_dir).await;
-
-    mount_layers(
-        &lower_dir_string,
-        upper_dir.to_str().unwrap(),
-        work_dir.to_str().unwrap(),
-        &root_fs,
-    );
+    mount_writable_tmp_fs(container_name);
+    mount_layers(container_name, &lower_dir_string);
 }
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
@@ -283,25 +269,25 @@ fn docker_arch() -> &'static str {
 mod tests {
     use serial_test::serial;
 
+    use crate::root_fs_path;
+
     use super::*;
 
-    const ROOT: &str = "/tmp/mydocker/test/rootfs";
-    const UNPACK: &str = "/tmp/mydocker/test/layers";
     const DEFAULT_REGISTRY: &str = "https://registry.hub.docker.com";
 
     #[tokio::test]
     #[serial]
     async fn test_pull_distribution() {
         let image = "busybox:latest";
-        let _ = tokio::fs::remove_dir_all(ROOT).await;
-        pull(DEFAULT_REGISTRY, image, ROOT.into(), UNPACK.into()).await;
+        let _ = tokio::fs::remove_dir_all(root_fs_path("test")).await;
+        pull(DEFAULT_REGISTRY, image, "test").await;
     }
 
     #[tokio::test]
     #[serial]
     async fn test_pull_oci() {
         let image = "ubuntu:latest";
-        let _ = tokio::fs::remove_dir_all(ROOT).await;
-        pull(DEFAULT_REGISTRY, image, ROOT.into(), UNPACK.into()).await;
+        let _ = tokio::fs::remove_dir_all(root_fs_path("test")).await;
+        pull(DEFAULT_REGISTRY, image, "test").await;
     }
 }
