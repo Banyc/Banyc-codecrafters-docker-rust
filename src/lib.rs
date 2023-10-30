@@ -120,3 +120,8 @@ fn execute_command(
     }
     Ok(())
 }
+
+fn process_alive(pid: usize) -> bool {
+    let res = unsafe { libc::kill(pid as i32, 0) };
+    res == 0
+}

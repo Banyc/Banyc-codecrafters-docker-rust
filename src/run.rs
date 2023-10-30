@@ -1,7 +1,7 @@
 use crate::{
     container_dir, execute_command,
     mounting::{mount, unmount},
-    pid_file_path,
+    pid_file_path, process_alive,
     pull_image::pull,
     read_pid, root_fs_path, write_pid,
 };
@@ -36,9 +36,10 @@ impl RunArgs {
         let container = container_dir(&self.name);
         let pid_file_path = pid_file_path(&self.name);
         let pid = read_pid(&pid_file_path);
-        if !self.force && pid.is_some() {
-            let pid = pid.unwrap();
-            panic!("Process `{pid}` may still be running. Use `run --force`.");
+        if let Some(pid) = pid {
+            if !self.force && process_alive(pid) {
+                panic!("Process `{pid}` may still be running. Use `run --force`.");
+            }
         }
         let root = root_fs_path(&self.name);
         unmount(&self.name);
