@@ -70,7 +70,7 @@ pub fn mount_writable_tmp_fs(container_name: &str) {
 pub fn mount_writable_tmp_fs(_container_name: &str) {}
 
 #[cfg(target_os = "linux")]
-pub fn mount_layers(container_name: &str, lower_dir_string: &str) {
+pub fn mount_layers(container_name: &str, lower_dir_string: &str) -> nix::Result<()> {
     use crate::{overlay_fs_upper_dir, overlay_fs_work_dir, root_fs_path};
 
     let upper_dir = overlay_fs_upper_dir(container_name);
@@ -93,8 +93,9 @@ pub fn mount_layers(container_name: &str, lower_dir_string: &str) {
         nix::mount::MsFlags::empty(),
         Some(overlay_o.as_str()),
     )
-    .unwrap();
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn mount_layers(_container_name: &str, _lower_dir_string: &str) {}
+pub fn mount_layers(_container_name: &str, _lower_dir_string: &str) -> nix::Result<()> {
+    Ok(())
+}

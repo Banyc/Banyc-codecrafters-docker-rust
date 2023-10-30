@@ -118,8 +118,12 @@ async fn handle_manifest(
         lower_dir_string.push_str(unpack_dir.to_str().unwrap());
     }
 
-    mount_writable_tmp_fs(container_name);
-    mount_layers(container_name, &lower_dir_string);
+    if mount_layers(container_name, &lower_dir_string).is_err() {
+        // We have to mount tmpfs inside a container
+        // But the writable layers will not survive reboots
+        mount_writable_tmp_fs(container_name);
+        mount_layers(container_name, &lower_dir_string).unwrap();
+    }
 }
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
