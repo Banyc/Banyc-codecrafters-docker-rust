@@ -1,6 +1,9 @@
 use std::io::{Read, Write};
 
-use crate::pull_image::pull;
+use crate::{
+    mounting::{mount, unmount},
+    pull_image::pull,
+};
 use anyhow::{Context, Result};
 use clap::Args;
 
@@ -42,12 +45,7 @@ impl RunArgs {
             panic!("Process `{pid}` may still be running. Use `run --force`.");
         }
         let root = container.join("rootfs");
-        // Unmount `/proc` in `root`
-        #[cfg(target_os = "linux")]
-        {
-            let proc_dir = root.join("proc");
-            let _ = nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE);
-        }
+        unmount(&root);
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();
 
@@ -98,21 +96,7 @@ impl RunArgs {
         let null = dev.join("null");
         std::fs::File::create(null).unwrap();
 
-        // Mount `/proc`
-        #[cfg(target_os = "linux")]
-        {
-            let proc_dir = root.join("proc");
-            std::fs::create_dir_all(&proc_dir).unwrap();
-
-            nix::mount::mount(
-                Some("/proc"),
-                &proc_dir,
-                Some("proc"),
-                nix::mount::MsFlags::empty(),
-                None::<&str>,
-            )
-            .unwrap();
-        }
+        mount(&root);
 
         // Chroot the root directory
         std::os::unix::fs::chroot(root).unwrap();
