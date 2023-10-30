@@ -3,7 +3,7 @@ use crate::{
     mounting::{mount, unmount},
     pid_file_path,
     pull_image::pull,
-    read_pid, write_pid,
+    read_pid, unpack_layer_dir, write_pid,
 };
 use anyhow::{Context, Result};
 use clap::Args;
@@ -50,12 +50,13 @@ impl RunArgs {
 
         // Pull image
         let root_clone = root.clone();
+        let unpack_layer_dir = unpack_layer_dir(&self.name);
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(async move {
-                pull(image, root_clone).await;
+                pull(image, root_clone, unpack_layer_dir).await;
             });
 
         // Copy command file `docker-explorer` to the root directory

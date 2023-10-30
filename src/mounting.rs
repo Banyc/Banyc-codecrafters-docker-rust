@@ -26,6 +26,11 @@ pub fn unmount(root: impl AsRef<std::path::Path>) {
         let proc_dir = root.as_ref().join("proc");
         let _ = nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE);
     }
+
+    // Unmount root fs
+    {
+        let _ = nix::mount::umount2(root.as_ref(), nix::mount::MntFlags::MNT_FORCE);
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

@@ -19,6 +19,10 @@ fn root_fs_path(name: &str) -> std::path::PathBuf {
     std::path::Path::new(CONTAINERS).join(name).join("rootfs")
 }
 
+fn unpack_layer_dir(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(CONTAINERS).join(name).join("layers")
+}
+
 fn read_pid(pid_file_path: impl AsRef<std::path::Path>) -> Option<usize> {
     if !pid_file_path.as_ref().exists() {
         return None;

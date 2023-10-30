@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use async_compression::tokio::bufread::GzipDecoder;
-use tokio::io::AsyncWriteExt;
+use tokio::{fs::create_dir_all, io::AsyncWriteExt};
 
 use crate::token_auth::pass_token_auth;
 
@@ -10,9 +10,8 @@ const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.mani
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const MEDIA_TYPE_OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 const LAYER_DIR: &str = "/tmp/mydocker/layers";
-const UNPACK_TEMP_DIR: &str = "/tmp/mydocker/unpack/";
 
-pub async fn pull(image: &str, root: std::path::PathBuf) {
+pub async fn pull(image: &str, root: std::path::PathBuf, unpack_layer_dir: std::path::PathBuf) {
     let (image_name, image_version) = image.split_once(':').unwrap();
     let image_name: Cow<'_, str> = match image_name.contains('/') {
         true => image_name.into(),
@@ -42,15 +41,30 @@ pub async fn pull(image: &str, root: std::path::PathBuf) {
     match media_type.as_str() {
         MEDIA_TYPE_DISTRIBUTION => {
             // https://distribution.github.io/distribution/spec/manifest-v2-2/#image-manifest
-            handle_manifest(&image_name, digest, MEDIA_TYPE_DISTRIBUTION, root).await
+            handle_manifest(
+                &image_name,
+                digest,
+                MEDIA_TYPE_DISTRIBUTION,
+                root,
+                unpack_layer_dir,
+            )
+            .await
         }
         // https://github.com/opencontainers/image-spec/blob/main/manifest.md
-        MEDIA_TYPE_OCI => handle_manifest(&image_name, digest, MEDIA_TYPE_OCI, root).await,
+        MEDIA_TYPE_OCI => {
+            handle_manifest(&image_name, digest, MEDIA_TYPE_OCI, root, unpack_layer_dir).await
+        }
         _ => panic!("{media_type}"),
     }
 }
 
-async fn handle_manifest(image_name: &str, digest: &str, accept: &str, root: std::path::PathBuf) {
+async fn handle_manifest(
+    image_name: &str,
+    digest: &str,
+    accept: &str,
+    root_fs: std::path::PathBuf,
+    unpack_layer_dir: std::path::PathBuf,
+) {
     let url_manifest = format!("{REGISTRY_BASE}/{image_name}/manifests/{digest}");
     // let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
     let resp = pass_token_auth(|client| client.get(&url_manifest).header("Accept", accept)).await;
@@ -59,9 +73,10 @@ async fn handle_manifest(image_name: &str, digest: &str, accept: &str, root: std
     // dbg!(&manifest);
     // dbg!(&resp.text().await.unwrap());
 
-    let unpack_dir = std::path::PathBuf::from(UNPACK_TEMP_DIR).join(root.file_name().unwrap());
-
+    let mut lower_dir_string = String::new();
     for (i, layer) in manifest.layers().iter().enumerate() {
+        let unpack_dir = unpack_layer_dir.join(format!("layer.{i}"));
+
         let digest = layer.digest();
 
         let _ = tokio::fs::remove_dir_all(&unpack_dir).await;
@@ -77,16 +92,38 @@ async fn handle_manifest(image_name: &str, digest: &str, accept: &str, root: std
         let tar = GzipDecoder::new(tar_gz);
         let mut archive = tokio_tar::Archive::new(tar);
         archive.unpack(&unpack_dir).await.unwrap();
-        let root = root.clone();
-        let unpack_dir = unpack_dir.clone();
-        tokio::task::spawn_blocking(move || {
-            move_dir_recursive(&unpack_dir, &root).unwrap();
-        })
-        .await
-        .unwrap();
+
+        if i != 0 {
+            lower_dir_string.push(':');
+        }
+        lower_dir_string.push_str(unpack_dir.to_str().unwrap());
     }
 
-    let _ = tokio::fs::remove_dir_all(UNPACK_TEMP_DIR).await;
+    let upper_dir = unpack_layer_dir.join("upper");
+    // https://unix.stackexchange.com/a/330166
+    let work_dir = unpack_layer_dir.join("work");
+
+    let _ = create_dir_all(&upper_dir).await;
+    let _ = create_dir_all(&work_dir).await;
+
+    #[cfg(target_os = "linux")]
+    {
+        let overlay_o = format!(
+            "lowerdir={lower_dir_string},upperdir={},workdir={}",
+            upper_dir.to_str().unwrap(),
+            work_dir.to_str().unwrap(),
+        );
+        // dbg!(&overlay_o);
+        // dbg!(&root_fs);
+        let _ = nix::mount::mount(
+            Some("overlay"),
+            &root_fs,
+            Some("overlay"),
+            nix::mount::MsFlags::empty(),
+            Some(overlay_o.as_str()),
+        );
+    }
+    let _ = root_fs;
 }
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
@@ -219,30 +256,6 @@ fn docker_arch() -> &'static str {
     }
 }
 
-fn move_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    use std::fs;
-
-    if src.is_dir() {
-        fs::create_dir_all(dst)?;
-
-        for entry in src.read_dir()? {
-            let entry = entry?;
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
-            if src_path.is_dir() {
-                move_dir_recursive(&src_path, &dst_path)?;
-            } else {
-                fs::rename(&src_path, &dst_path)?;
-            }
-        }
-    } else {
-        fs::rename(src, dst)?;
-    }
-
-    fs::remove_dir_all(src)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -250,13 +263,14 @@ mod tests {
     use super::*;
 
     const ROOT: &str = "/tmp/mydocker/test/rootfs";
+    const UNPACK: &str = "/tmp/mydocker/test/layers";
 
     #[tokio::test]
     #[serial]
     async fn test_pull_distribution() {
         let image = "busybox:latest";
         let _ = tokio::fs::remove_dir_all(ROOT).await;
-        pull(image, ROOT.into()).await;
+        pull(image, ROOT.into(), UNPACK.into()).await;
     }
 
     #[tokio::test]
@@ -264,6 +278,6 @@ mod tests {
     async fn test_pull_oci() {
         let image = "ubuntu:latest";
         let _ = tokio::fs::remove_dir_all(ROOT).await;
-        pull(image, ROOT.into()).await;
+        pull(image, ROOT.into(), UNPACK.into()).await;
     }
 }
