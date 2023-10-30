@@ -25,12 +25,12 @@ impl RmiArgs {
             let mut layers_to_remove = vec![];
             for layer in layers {
                 let layer = layer.unwrap();
-                let layer = layer.file_name();
-                let mut split = layer.to_str().unwrap().split('.');
+                let layer_name = layer.file_name();
+                let mut split = layer_name.to_str().unwrap().split('.');
                 let image_left_ = split.next().unwrap().to_string();
                 let image_right_ = split.next().unwrap().to_string();
                 if image_left == image_left_ && image_right == image_right_ {
-                    layers_to_remove.push(layer);
+                    layers_to_remove.push(layer.path());
                 }
             }
             for layer in layers_to_remove {
