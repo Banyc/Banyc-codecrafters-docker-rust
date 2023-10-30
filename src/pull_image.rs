@@ -24,7 +24,7 @@ pub async fn pull(
     // https://distribution.github.io/distribution/spec/api/#pulling-an-image-manifest
     let url_manifests = format!("{registry_base}/{image_name}/manifests/{image_version}");
 
-    // // https://distribution.github.io/distribution/spec/manifest-v2-2/#manifest-list
+    // https://distribution.github.io/distribution/spec/manifest-v2-2/#manifest-list
     let resp = pass_token_auth(|client| {
         client
             .get(&url_manifests)
@@ -33,7 +33,15 @@ pub async fn pull(
     .await;
     // dbg!(&resp);
     // dbg!(&resp.text().await.unwrap());
-    let manifest_list: models::ImageManifestList = resp.json().await.unwrap();
+    let resp: serde_json::Value = resp.json().await.unwrap();
+    let manifest_list: models::ImageManifestList = serde_json::from_value(resp.clone()).unwrap();
+    if manifest_list.schema_version() != 2 {
+        panic!(
+            "Manifest list schema version `{}` not supported",
+            manifest_list.schema_version()
+        );
+    }
+    let manifest_list: models::ImageManifestListV2 = serde_json::from_value(resp).unwrap();
     // dbg!(&manifest_list);
     let manifest = &manifest_list
         .manifests()
@@ -189,6 +197,13 @@ mod models {
     #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
     #[serde(rename_all = "camelCase")]
     pub struct ImageManifestList {
+        #[getset(get_copy = "pub")]
+        schema_version: usize,
+    }
+
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImageManifestListV2 {
         #[getset(get_copy = "pub")]
         schema_version: usize,
         #[getset(get = "pub")]
