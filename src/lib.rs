@@ -68,6 +68,7 @@ fn write_pid(pid_file_path: impl AsRef<std::path::Path>) {
     use std::io::Write;
 
     let pid = std::process::id();
+    let _ = std::fs::remove_file(&pid_file_path);
     let mut file = std::fs::File::options()
         .create(true)
         .write(true)
