@@ -3,6 +3,7 @@ pub mod ls;
 pub mod mounting;
 pub mod pull_image;
 pub mod rm;
+pub mod rmi;
 pub mod run;
 pub mod token_auth;
 pub mod www_authenticate;

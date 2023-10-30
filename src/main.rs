@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use docker_starter_rust::{exec::ExecArgs, ls::LsArgs, rm::RmArgs, run::RunArgs};
+use docker_starter_rust::{exec::ExecArgs, ls::LsArgs, rm::RmArgs, rmi::RmiArgs, run::RunArgs};
 
 #[derive(Debug, Parser)]
 pub struct Cli {
@@ -14,6 +14,7 @@ enum Command {
     Exec(ExecArgs),
     Rm(RmArgs),
     Ls(LsArgs),
+    Rmi(RmiArgs),
 }
 
 fn main() -> Result<()> {
@@ -23,5 +24,6 @@ fn main() -> Result<()> {
         Command::Exec(exec) => exec.run(),
         Command::Rm(rm) => rm.run(),
         Command::Ls(ls) => ls.run(),
+        Command::Rmi(rmi) => rmi.run(),
     }
 }
