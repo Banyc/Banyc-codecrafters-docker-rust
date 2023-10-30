@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use async_compression::tokio::bufread::GzipDecoder;
 use tokio::{fs::create_dir_all, io::AsyncWriteExt};
 
-use crate::{token_auth::pass_token_auth, PACKED_LAYER_DIR};
+use crate::{mounting::mount_layers, token_auth::pass_token_auth, PACKED_LAYER_DIR};
 
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
@@ -128,25 +128,12 @@ async fn handle_manifest(
     let _ = create_dir_all(&upper_dir).await;
     let _ = create_dir_all(&work_dir).await;
 
-    #[cfg(target_os = "linux")]
-    {
-        let overlay_o = format!(
-            "lowerdir={lower_dir_string},upperdir={},workdir={}",
-            upper_dir.to_str().unwrap(),
-            work_dir.to_str().unwrap(),
-        );
-        // dbg!(&overlay_o);
-        // dbg!(&root_fs);
-        nix::mount::mount(
-            Some("overlay"),
-            &root_fs,
-            Some("overlay"),
-            nix::mount::MsFlags::empty(),
-            Some(overlay_o.as_str()),
-        )
-        .unwrap();
-    }
-    let _ = root_fs;
+    mount_layers(
+        &lower_dir_string,
+        upper_dir.to_str().unwrap(),
+        work_dir.to_str().unwrap(),
+        &root_fs,
+    );
 }
 
 // https://distribution.github.io/distribution/spec/api/#pulling-a-layer
