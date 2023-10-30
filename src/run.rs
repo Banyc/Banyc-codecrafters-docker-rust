@@ -1,14 +1,14 @@
-use std::io::{Read, Write};
-
 use crate::{
+    container_dir, execute_command,
     mounting::{mount, unmount},
+    pid_file_path,
     pull_image::pull,
+    read_pid, write_pid,
 };
 use anyhow::{Context, Result};
 use clap::Args;
 
 const DOCKER_EXPLORER: &str = "/usr/local/bin/docker-explorer";
-const CONTAINERS: &str = "/tmp/mydocker/containers";
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
@@ -30,18 +30,11 @@ impl RunArgs {
         let command_args = &self.command_args;
 
         // Set up container
-        let containers = std::path::Path::new(CONTAINERS);
-        let container = containers.join(&self.name);
-        let pid_file_path = container.join("pid");
-        if !self.force && pid_file_path.exists() {
-            let file = std::fs::File::options()
-                .read(true)
-                .open(&pid_file_path)
-                .unwrap();
-            let mut file = std::io::BufReader::new(file);
-            let mut pid = String::new();
-            file.read_to_string(&mut pid).unwrap();
-            let pid: usize = pid.parse().unwrap();
+        let container = container_dir(&self.name);
+        let pid_file_path = pid_file_path(&self.name);
+        let pid = read_pid(&pid_file_path);
+        if !self.force && pid.is_some() {
+            let pid = pid.unwrap();
             panic!("Process `{pid}` may still be running. Use `run --force`.");
         }
         let root = container.join("rootfs");
@@ -53,15 +46,7 @@ impl RunArgs {
         std::fs::create_dir_all(&root).unwrap();
 
         // Lock this container
-        {
-            let pid = std::process::id();
-            let mut file = std::fs::File::options()
-                .create(true)
-                .write(true)
-                .open(&pid_file_path)
-                .unwrap();
-            file.write_all(format!("{pid}").as_bytes()).unwrap();
-        }
+        write_pid(&pid_file_path);
 
         // Pull image
         let root_clone = root.clone();
@@ -98,41 +83,7 @@ impl RunArgs {
 
         mount(&root);
 
-        // Chroot the root directory
-        std::os::unix::fs::chroot(root).unwrap();
-        std::env::set_current_dir("/").unwrap();
-
-        // The calling process is not moved into the new namespace.
-        // The first child created by the calling process will have the process ID 1 and will assume the role of init(1) in the new namespace.
-        #[cfg(target_os = "linux")]
-        {
-            let res = unsafe { libc::unshare(libc::CLONE_NEWPID) };
-            if res != 0 {
-                std::process::exit(res);
-            }
-        }
-
         // Execute the command
-        let mut child = std::process::Command::new(command)
-            .args(command_args)
-            .stdin(std::process::Stdio::inherit())
-            .stdout(std::process::Stdio::inherit())
-            .stderr(std::process::Stdio::inherit())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "Tried to run '{:?}' with arguments {:?}",
-                    command, command_args
-                )
-            })?;
-
-        // Wait for the child to exit
-        let exit_status = child.wait().unwrap();
-
-        // Return exit code
-        if let Some(code) = exit_status.code() {
-            std::process::exit(code);
-        }
-        Ok(())
+        execute_command(command, command_args, &root)
     }
 }
