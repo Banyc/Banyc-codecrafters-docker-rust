@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use async_compression::tokio::bufread::GzipDecoder;
-use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
 use crate::token_auth::pass_token_auth;
@@ -31,14 +30,14 @@ pub async fn pull(image: &str, root: std::path::PathBuf) {
     .await;
     // dbg!(&resp);
     // dbg!(&resp.text().await.unwrap());
-    let manifest_list: ImageManifestList = resp.json().await.unwrap();
+    let manifest_list: models::ImageManifestList = resp.json().await.unwrap();
     // dbg!(&manifest_list);
     let manifest = &manifest_list
-        .manifests
+        .manifests()
         .iter()
-        .find(|manifest| manifest.platform.architecture == docker_arch())
+        .find(|manifest| manifest.platform().architecture() == docker_arch())
         .unwrap();
-    let (media_type, digest) = (&manifest.media_type, &manifest.digest);
+    let (media_type, digest) = (manifest.media_type(), manifest.digest());
 
     match media_type.as_str() {
         MEDIA_TYPE_DISTRIBUTION => {
@@ -56,14 +55,14 @@ async fn handle_manifest(image_name: &str, digest: &str, accept: &str, root: std
     // let url_manifest = format!("{REGISTRY_BASE}/library/{image_name}/manifests/{image_version}");
     let resp = pass_token_auth(|client| client.get(&url_manifest).header("Accept", accept)).await;
     // dbg!(&resp);
-    let manifest: ImageManifest = resp.json().await.unwrap();
+    let manifest: models::ImageManifest = resp.json().await.unwrap();
     // dbg!(&manifest);
     // dbg!(&resp.text().await.unwrap());
 
     let unpack_dir = std::path::PathBuf::from(UNPACK_TEMP_DIR).join(root.file_name().unwrap());
 
-    for (i, layer) in manifest.layers.iter().enumerate() {
-        let digest = &layer.digest;
+    for (i, layer) in manifest.layers().iter().enumerate() {
+        let digest = layer.digest();
 
         let _ = tokio::fs::remove_dir_all(&unpack_dir).await;
         tokio::fs::create_dir_all(&unpack_dir).await.unwrap();
@@ -124,60 +123,90 @@ async fn download(resp: reqwest::Response, file_path: impl AsRef<std::path::Path
     file.write_all(&bytes).await.unwrap();
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImageManifestList {
-    // schema_version: usize,
-    // media_type: String,
-    manifests: Vec<ImagePlatformManifest>,
-}
+#[allow(dead_code)]
+mod models {
+    use getset::{CopyGetters, Getters};
+    use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImagePlatformManifest {
-    media_type: String,
-    // size: usize,
-    digest: String,
-    platform: ImagePlatform,
-}
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImageManifestList {
+        #[getset(get_copy = "pub")]
+        schema_version: usize,
+        #[getset(get = "pub")]
+        media_type: String,
+        #[getset(get = "pub")]
+        manifests: Vec<ImagePlatformManifest>,
+    }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImagePlatform {
-    architecture: String,
-    // os: String,
-    // #[serde(rename = "os.version")]
-    // os_version: Option<String>,
-    // #[serde(rename = "os.features")]
-    // os_features: Option<Vec<String>>,
-    // variant: Option<String>,
-    // features: Option<Vec<String>>,
-}
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImagePlatformManifest {
+        #[getset(get = "pub")]
+        media_type: String,
+        #[getset(get_copy = "pub")]
+        size: usize,
+        #[getset(get = "pub")]
+        digest: String,
+        #[getset(get = "pub")]
+        platform: ImagePlatform,
+    }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImageManifest {
-    // schema_version: usize,
-    // media_type: String,
-    // config: ImageConfig,
-    layers: Vec<ImageLayer>,
-}
+    #[derive(Debug, Clone, Deserialize, Getters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImagePlatform {
+        #[getset(get = "pub")]
+        architecture: String,
+        #[getset(get = "pub")]
+        os: String,
+        #[getset(get = "pub")]
+        #[serde(rename = "os.version")]
+        os_version: Option<String>,
+        #[getset(get = "pub")]
+        #[serde(rename = "os.features")]
+        os_features: Option<Vec<String>>,
+        #[getset(get = "pub")]
+        variant: Option<String>,
+        #[getset(get = "pub")]
+        features: Option<Vec<String>>,
+    }
 
-// #[derive(Debug, Clone, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// struct ImageConfig {
-//     media_type: String,
-//     size: usize,
-//     digest: String,
-// }
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImageManifest {
+        #[getset(get_copy = "pub")]
+        schema_version: usize,
+        #[getset(get = "pub")]
+        media_type: String,
+        #[getset(get = "pub")]
+        config: ImageConfig,
+        #[getset(get = "pub")]
+        layers: Vec<ImageLayer>,
+    }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImageLayer {
-    // media_type: String,
-    // size: usize,
-    digest: String,
-    // urls: Option<Vec<String>>,
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImageConfig {
+        #[getset(get = "pub")]
+        media_type: String,
+        #[getset(get_copy = "pub")]
+        size: usize,
+        #[getset(get = "pub")]
+        digest: String,
+    }
+
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ImageLayer {
+        #[getset(get = "pub")]
+        media_type: String,
+        #[getset(get_copy = "pub")]
+        size: usize,
+        #[getset(get = "pub")]
+        digest: String,
+        #[getset(get = "pub")]
+        urls: Option<Vec<String>>,
+    }
 }
 
 fn docker_arch() -> &'static str {
