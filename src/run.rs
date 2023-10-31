@@ -87,7 +87,7 @@ impl RunArgs {
 
         #[cfg(target_os = "linux")]
         {
-            crate::mounting::mount(&self.name);
+            crate::mounting::mount_root_fs(&self.name);
         }
 
         // Execute the command

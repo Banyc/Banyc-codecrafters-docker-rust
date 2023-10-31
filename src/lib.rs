@@ -94,10 +94,15 @@ fn execute_command(
     std::os::unix::fs::chroot(root).unwrap();
     std::env::set_current_dir("/").unwrap();
 
-    // The calling process is not moved into the new namespace.
-    // The first child created by the calling process will have the process ID 1 and will assume the role of init(1) in the new namespace.
     #[cfg(target_os = "linux")]
     {
+        let res = unsafe { libc::unshare(libc::CLONE_NEWNS) };
+        if res != 0 {
+            std::process::exit(res);
+        }
+
+        // The calling process is not moved into the new namespace.
+        // The first child created by the calling process will have the process ID 1 and will assume the role of init(1) in the new namespace.
         let res = unsafe { libc::unshare(libc::CLONE_NEWPID) };
         if res != 0 {
             std::process::exit(res);
@@ -105,18 +110,26 @@ fn execute_command(
     }
 
     // Execute the command
-    let mut child = std::process::Command::new(command.as_ref())
+    let mut command_exec = std::process::Command::new(command.as_ref());
+    command_exec
         .args(command_args)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .spawn()
-        .with_context(|| {
-            format!(
-                "Tried to run '{:?}' with arguments {:?}",
-                command, command_args
-            )
-        })?;
+        .stderr(std::process::Stdio::inherit());
+    #[cfg(target_os = "linux")]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+
+        use mounting::mount_proc_in_container;
+
+        command_exec.pre_exec(mount_proc_in_container);
+    }
+    let mut child = command_exec.spawn().with_context(|| {
+        format!(
+            "Tried to run '{:?}' with arguments {:?}",
+            command, command_args
+        )
+    })?;
 
     // Wait for the child to exit
     let exit_status = child.wait().unwrap();

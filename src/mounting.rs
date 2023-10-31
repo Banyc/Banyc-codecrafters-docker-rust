@@ -1,33 +1,22 @@
 use crate::overlay_fs_lower_dir;
 
-pub fn mount(container_name: &str) {
-    use crate::root_fs_path;
-
-    // Mount root_fs
-    {
-        if mount_layers(container_name).is_err() {
-            // We have to mount tmpfs inside a container
-            // But the writable layers will not survive reboots
-            mount_writable_tmp_fs(container_name);
-            mount_layers(container_name).unwrap();
-        }
+pub fn mount_root_fs(container_name: &str) {
+    if mount_layers(container_name).is_err() {
+        // We have to mount tmpfs inside a container
+        // But the writable layers will not survive reboots
+        mount_writable_tmp_fs(container_name);
+        mount_layers(container_name).unwrap();
     }
+}
 
-    // Mount `/proc`
-    {
-        let root_fs = root_fs_path(container_name);
-        let proc_dir = root_fs.join("proc");
-        std::fs::create_dir_all(&proc_dir).unwrap();
+pub fn mount_proc_in_container() -> std::io::Result<()> {
+    let proc_dir = std::path::Path::new("/proc");
+    std::fs::create_dir_all(proc_dir)?;
 
-        nix::mount::mount(
-            Some("/proc"),
-            &proc_dir,
-            Some("proc"),
-            nix::mount::MsFlags::empty(),
-            None::<&std::path::Path>,
-        )
-        .unwrap();
-    }
+    let flags = nix::mount::MsFlags::empty();
+    nix::mount::mount(Some("proc"), proc_dir, Some("proc"), flags, None::<&str>)?;
+
+    Ok(())
 }
 
 pub fn unmount(container_name: &str) {
