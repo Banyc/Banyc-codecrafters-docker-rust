@@ -1,8 +1,19 @@
-#[cfg(target_os = "linux")]
-pub fn mount(container_name: &str) {
-    // Mount `/proc`
+use crate::overlay_fs_lower_dir;
 
+pub fn mount(container_name: &str) {
     use crate::root_fs_path;
+
+    // Mount root_fs
+    {
+        if mount_layers(container_name).is_err() {
+            // We have to mount tmpfs inside a container
+            // But the writable layers will not survive reboots
+            mount_writable_tmp_fs(container_name);
+            mount_layers(container_name).unwrap();
+        }
+    }
+
+    // Mount `/proc`
     {
         let root_fs = root_fs_path(container_name);
         let proc_dir = root_fs.join("proc");
@@ -19,10 +30,6 @@ pub fn mount(container_name: &str) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-pub fn mount(_root_fs: impl AsRef<std::path::Path>) {}
-
-#[cfg(target_os = "linux")]
 pub fn unmount(container_name: &str) {
     use crate::{overlay_fs_writable_layers_dir, root_fs_path};
 
@@ -46,11 +53,7 @@ pub fn unmount(container_name: &str) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-pub fn unmount(_container_name: &str) {}
-
-#[cfg(target_os = "linux")]
-pub fn mount_writable_tmp_fs(container_name: &str) {
+fn mount_writable_tmp_fs(container_name: &str) {
     use crate::overlay_fs_writable_layers_dir;
 
     // https://stackoverflow.com/a/67208735/9920172
@@ -66,12 +69,21 @@ pub fn mount_writable_tmp_fs(container_name: &str) {
     .unwrap();
 }
 
-#[cfg(not(target_os = "linux"))]
-pub fn mount_writable_tmp_fs(_container_name: &str) {}
-
-#[cfg(target_os = "linux")]
-pub fn mount_layers(container_name: &str, lower_dir_string: &str) -> nix::Result<()> {
+fn mount_layers(container_name: &str) -> nix::Result<()> {
     use crate::{overlay_fs_upper_dir, overlay_fs_work_dir, root_fs_path};
+
+    let mut lower_dir_string = String::new();
+    for (i, layer) in overlay_fs_lower_dir(container_name)
+        .read_dir()
+        .unwrap()
+        .enumerate()
+    {
+        let layer = layer.unwrap();
+        if i != 0 {
+            lower_dir_string.push(':');
+        }
+        lower_dir_string.push_str(layer.path().to_str().unwrap());
+    }
 
     let upper_dir = overlay_fs_upper_dir(container_name);
     std::fs::create_dir_all(&upper_dir).unwrap();
@@ -93,9 +105,4 @@ pub fn mount_layers(container_name: &str, lower_dir_string: &str) -> nix::Result
         nix::mount::MsFlags::empty(),
         Some(overlay_o.as_str()),
     )
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn mount_layers(_container_name: &str, _lower_dir_string: &str) -> nix::Result<()> {
-    Ok(())
 }

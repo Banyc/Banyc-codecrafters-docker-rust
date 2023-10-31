@@ -1,9 +1,6 @@
 use crate::{
-    container_dir, execute_command,
-    mounting::{mount, unmount},
-    pid_file_path, process_alive,
-    pull_image::pull,
-    read_pid, root_fs_path, write_pid,
+    container_dir, execute_command, pid_file_path, process_alive, pull_image::pull, read_pid,
+    root_fs_path, write_pid,
 };
 use anyhow::{Context, Result};
 use clap::Args;
@@ -42,7 +39,10 @@ impl RunArgs {
             }
         }
         let root = root_fs_path(&self.name);
-        unmount(&self.name);
+        #[cfg(target_os = "linux")]
+        {
+            crate::mounting::unmount(&self.name);
+        }
         let _ = std::fs::remove_dir_all(&container);
         std::fs::create_dir_all(&container).unwrap();
 
@@ -85,7 +85,10 @@ impl RunArgs {
         let null = dev.join("null");
         std::fs::File::create(null).unwrap();
 
-        mount(&self.name);
+        #[cfg(target_os = "linux")]
+        {
+            crate::mounting::mount(&self.name);
+        }
 
         // Execute the command
         execute_command(command, command_args, &root)

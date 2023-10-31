@@ -1,8 +1,5 @@
 // https://distribution.github.io/distribution/spec/auth/token/
 
-use getset::Getters;
-use serde::Deserialize;
-
 use crate::www_authenticate::WwwAuthenticate;
 
 pub async fn pass_token_auth<F>(f: F) -> reqwest::Response
@@ -37,7 +34,7 @@ where
     let token_url = format!("{}?{}", how.pairs().get("realm").unwrap(), query);
 
     // The authorization service returns an opaque Bearer token representing the client’s authorized access.
-    let resp: TokenResponse = client
+    let resp: models::TokenResponse = client
         .get(token_url)
         .send()
         .await
@@ -57,13 +54,22 @@ where
         .unwrap()
 }
 
-#[derive(Debug, Clone, Deserialize, Getters)]
-struct TokenResponse {
-    #[getset(get = "pub")]
-    token: String,
-    // access_token: String,
-    // expires_in: usize,
-    // issued_at: String,
+#[allow(dead_code)]
+mod models {
+    use getset::{CopyGetters, Getters};
+    use serde::Deserialize;
+
+    #[derive(Debug, Clone, Deserialize, Getters, CopyGetters)]
+    pub struct TokenResponse {
+        #[getset(get = "pub")]
+        token: String,
+        #[getset(get = "pub")]
+        access_token: String,
+        #[getset(get_copy = "pub")]
+        expires_in: usize,
+        #[getset(get = "pub")]
+        issued_at: String,
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 pub mod exec;
 pub mod ls;
+#[cfg(target_os = "linux")]
 pub mod mounting;
 pub mod pull_image;
 pub mod rm;
@@ -27,13 +28,13 @@ fn root_fs_path(name: &str) -> std::path::PathBuf {
     CONTAINERS.join(name).join("rootfs")
 }
 
-fn unpack_layer_dir(name: &str) -> std::path::PathBuf {
+fn overlay_layer_dir(name: &str) -> std::path::PathBuf {
     CONTAINERS.join(name).join("layers")
 }
 
 #[allow(dead_code)]
 fn overlay_fs_writable_layers_dir(name: &str) -> std::path::PathBuf {
-    unpack_layer_dir(name).join("writable")
+    overlay_layer_dir(name).join("writable")
 }
 
 #[allow(dead_code)]
@@ -44,6 +45,11 @@ fn overlay_fs_work_dir(name: &str) -> std::path::PathBuf {
 #[allow(dead_code)]
 fn overlay_fs_upper_dir(name: &str) -> std::path::PathBuf {
     overlay_fs_writable_layers_dir(name).join("upper")
+}
+
+#[allow(dead_code)]
+fn overlay_fs_lower_dir(name: &str) -> std::path::PathBuf {
+    overlay_layer_dir(name).join("lower")
 }
 
 fn read_pid(pid_file_path: impl AsRef<std::path::Path>) -> Option<usize> {

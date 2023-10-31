@@ -3,11 +3,7 @@ use std::borrow::Cow;
 use async_compression::tokio::bufread::GzipDecoder;
 use tokio::io::AsyncWriteExt;
 
-use crate::{
-    mounting::{mount_layers, mount_writable_tmp_fs},
-    token_auth::pass_token_auth,
-    unpack_layer_dir, PACKED_LAYER_DIR,
-};
+use crate::{overlay_fs_lower_dir, token_auth::pass_token_auth, PACKED_LAYER_DIR};
 
 const MEDIA_TYPE_MANIFEST_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const MEDIA_TYPE_DISTRIBUTION: &str = "application/vnd.docker.distribution.manifest.v2+json";
@@ -91,8 +87,7 @@ async fn handle_manifest(
     // dbg!(&manifest);
     // dbg!(&resp.text().await.unwrap());
 
-    let unpack_layer_dir = unpack_layer_dir(container_name);
-    let mut lower_dir_string = String::new();
+    let unpack_layer_dir = overlay_fs_lower_dir(container_name);
     for (i, layer) in manifest.layers().iter().enumerate() {
         let unpack_dir = unpack_layer_dir.join(format!("layer.{i}"));
 
@@ -111,18 +106,6 @@ async fn handle_manifest(
         let tar = GzipDecoder::new(tar_gz);
         let mut archive = tokio_tar::Archive::new(tar);
         archive.unpack(&unpack_dir).await.unwrap();
-
-        if i != 0 {
-            lower_dir_string.push(':');
-        }
-        lower_dir_string.push_str(unpack_dir.to_str().unwrap());
-    }
-
-    if mount_layers(container_name, &lower_dir_string).is_err() {
-        // We have to mount tmpfs inside a container
-        // But the writable layers will not survive reboots
-        mount_writable_tmp_fs(container_name);
-        mount_layers(container_name, &lower_dir_string).unwrap();
     }
 }
 
