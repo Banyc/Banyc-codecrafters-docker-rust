@@ -1,3 +1,5 @@
+use std::os::unix::process::CommandExt;
+
 pub mod exec;
 pub mod ls;
 #[cfg(target_os = "linux")]
@@ -116,24 +118,31 @@ fn execute_command(
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit());
-    #[cfg(target_os = "linux")]
     unsafe {
-        use std::os::unix::process::CommandExt;
+        command_exec.pre_exec(move || {
+            #[cfg(target_os = "linux")]
+            {
+                // Make sure child gets killed if parent dies
+                let res = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGHUP);
+                if res != 0 {
+                    return Err(nix::Error::from_i32(res).into());
+                }
 
-        use mounting::mount_proc_in_container;
-
-        command_exec.pre_exec(mount_proc_in_container);
+                mounting::mount_proc_in_container()?;
+            }
+            Ok(())
+        });
     }
     let child = command_exec.spawn().with_context(|| {
         format!(
-            "Tried to run '{:?}' with arguments {:?}",
+            "Tried to spawn '{:?}' with arguments {:?}",
             command, command_args
         )
     })?;
     let mut child = ChildGuard(child);
 
     // Wait for the child to exit
-    let exit_status = child.0.wait().with_context(|| {
+    let exit_status = child.get_mut().wait().with_context(|| {
         format!(
             "Tried to wait '{:?}' with arguments {:?}",
             command, command_args
@@ -149,6 +158,12 @@ fn execute_command(
 
 // https://stackoverflow.com/a/30540177/9920172
 struct ChildGuard(std::process::Child);
+
+impl ChildGuard {
+    pub fn get_mut(&mut self) -> &mut std::process::Child {
+        &mut self.0
+    }
+}
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {

@@ -38,7 +38,6 @@ impl RunArgs {
                 panic!("Process `{pid}` may still be running. Use `run --force`.");
             }
         }
-        let root = root_fs_path(&self.name);
         #[cfg(target_os = "linux")]
         {
             crate::mounting::unmount(&self.name);
@@ -47,6 +46,7 @@ impl RunArgs {
         std::fs::create_dir_all(&container).unwrap();
 
         // Set up root directory
+        let root = root_fs_path(&self.name);
         std::fs::create_dir_all(&root).unwrap();
 
         // Lock this container
