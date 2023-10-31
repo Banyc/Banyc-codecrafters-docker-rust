@@ -124,21 +124,39 @@ fn execute_command(
 
         command_exec.pre_exec(mount_proc_in_container);
     }
-    let mut child = command_exec.spawn().with_context(|| {
+    let child = command_exec.spawn().with_context(|| {
         format!(
             "Tried to run '{:?}' with arguments {:?}",
             command, command_args
         )
     })?;
+    let mut child = ChildGuard(child);
 
     // Wait for the child to exit
-    let exit_status = child.wait().unwrap();
+    let exit_status = child.0.wait().with_context(|| {
+        format!(
+            "Tried to wait '{:?}' with arguments {:?}",
+            command, command_args
+        )
+    })?;
 
     // Return exit code
     if let Some(code) = exit_status.code() {
         std::process::exit(code);
     }
     Ok(())
+}
+
+// https://stackoverflow.com/a/30540177/9920172
+struct ChildGuard(std::process::Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        // You can check std::thread::panicking() here
+        if let Err(e) = self.0.kill() {
+            println!("Could not kill child process `{}`: {e}", self.0.id());
+        }
+    }
 }
 
 fn process_alive(pid: usize) -> bool {
