@@ -29,16 +29,16 @@ pub fn unmount(container_name: &str) {
         let _ = nix::mount::umount2(&proc_dir, nix::mount::MntFlags::MNT_FORCE);
     }
 
-    // Unmount writable dir of overlay fs
-    {
-        let writable = overlay_fs_writable_layers_dir(container_name);
-        let _ = nix::mount::umount2(&writable, nix::mount::MntFlags::MNT_FORCE);
-    }
-
     // Unmount `root_fs`
     {
         let root_fs = root_fs_path(container_name);
         let _ = nix::mount::umount2(&root_fs, nix::mount::MntFlags::MNT_FORCE);
+    }
+
+    // Unmount writable dir of overlay fs
+    {
+        let writable = overlay_fs_writable_layers_dir(container_name);
+        let _ = nix::mount::umount2(&writable, nix::mount::MntFlags::MNT_FORCE);
     }
 }
 
